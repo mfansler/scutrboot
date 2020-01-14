@@ -1,0 +1,23 @@
+Package: scutrboot
+Type: Package
+Title: Single-Cell UTR Bootstrap Tools
+Version: 0.1.0
+Authors@R: person("Mervin", "Fansler", email="mmfansler@gmail.com", role=c("aut", "cre"))
+Description: A set of bootstrap-based statistical methods for analyzing 3\u2032 UTR 
+    quantification data derived from single-cell RNA-sequencing. 
+License: GPL-3.0-or-later
+Encoding: UTF-8
+LazyData: true
+Depends: R (>= 3.6.0)
+Imports:
+    Matrix (>= 1.2),
+    matrixStats (>= 0.54.0),
+    SingleCellExperiment (>= 1.6.0),
+    BiocParallel (>= 1.18)
+Suggests:
+    knitr,
+    BiocStyle,
+    rmarkdown,
+    S4Vectors
+VignetteBuilder: knitr
+RoxygenNote: 6.1.1
