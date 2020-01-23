@@ -15,6 +15,42 @@
 ## converts string representation to column index vector
 .idxstr_to_idx <- function (idxstr) { as.integer(unlist(strsplit(idxstr, split=",", fixed=TRUE))) }
 
+.chunk <- function(x, max_chunk_size) {
+  n_chunks <- ceiling(length(x)/max_chunk_size)
+  if (n_chunks > 1)
+    split(x, cut(seq_along(x), n_chunks, labels = FALSE))
+  else
+    x
+}
+
+## Credit: https://stackoverflow.com/a/49252734/570918
+.flatten <- function (x, use.names = TRUE, classes = "ANY") {
+  #' Source taken from rlist::list.flatten
+  len <- sum(rapply(x, function(x) 1L, classes = classes))
+  y <- vector("list", len)
+  i <- 0L
+  items <- rapply(x, function(x) {
+    i <<- i + 1L
+    y[[i]] <<- x
+    TRUE
+  }, classes = classes)
+  if (use.names && !is.null(nm <- names(items)))
+    names(y) <- nm
+  y
+}
+
+.chunk_oversized <- function (groups_to_genes_dict, max_chunk_size) {
+  ## break up chunks that are larger than max_chunk_size
+  chunked_dict <- lapply(groups_to_genes_dict, .chunk, max_chunk_size=max_chunk_size)
+
+  ## flatten, keeping names
+  chunked_dict <- .flatten(chunked_dict)
+
+  ## restore names to original name set
+  names(chunked_dict) <- gsub(".[0-9]+$", "", names(chunked_dict))
+
+  chunked_dict
+}
 
 #' Perform multisample bootstrap statistical test on variance in LUI estimates.
 #'
@@ -48,7 +84,8 @@
 #' @import Matrix
 #' @examples
 multisample_test_lui <- function (sce, group_key="cell_type", isoform_key="isoform", gene_key="gene",
-                                  min_cells=50, min_coexpressed=2, n_permutations=10000, enforce_min_cells=TRUE) {
+                                  min_cells=50, min_coexpressed=2, n_permutations=10000, enforce_min_cells=TRUE,
+                                  max_chunk_size=30) {
   ## DESIGN MATRICES
   ## ===============
 
@@ -92,6 +129,9 @@ multisample_test_lui <- function (sce, group_key="cell_type", isoform_key="isofo
 
   ## construct map {group_combination -> coexpr_genes}
   coexpr.dict.genes <- split(names(genes.groups), genes.groups)
+
+  ## chunk dictionary for improved parallelization
+  coexpr.dict.genes <- .chunk_oversized(coexpr.dict.genes, max_chunk_size)
 
   ## RSS PERMUTATIONS
   ## ================
