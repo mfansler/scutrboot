@@ -68,6 +68,9 @@
 #' @param n_permutations An integer number of permutations to perform.
 #' @param enforce_min_cells A boolean specifying whether to discard permutations
 #'   not satisfying the \code{min_cells} threshold in all groups being tested.
+#' @param max_chunk_size An integer specifying the maximum number of genes to
+#'   process in parallel. Smaller chunks can help to better distribute the test
+#'   across multiple cores.
 #'
 #' @return A data.frame summarizing the test results for all genes that could be
 #'   tested given the specified \code{min_cells} and \code{min_coexpressed}
