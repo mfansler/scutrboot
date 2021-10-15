@@ -8,24 +8,25 @@
 #' @param na.rm
 #'
 #' @return
-#' @export
 #'
-#' @examples
-lui_ci <- function (object, idx.SU, idx.LU, replicates=2000, probs=c(0.005, 0.025, 0.25, 0.5, 0.75, 0.975, 0.995), na.rm=TRUE) {
-  cts <- to_counts(object)
+#' @import Matrix
+#' @importFrom sparseMatrixStats rowQuantiles
+#' @export
+lui_ci <- function(object, idx.SU, idx.LU, replicates = 2000, probs = c(0.005, 0.025, 0.25, 0.5, 0.75, 0.975, 0.995), na.rm = TRUE) {
+    cts <- to_counts(object)
 
-  n.cells <- ncol(cts)
+    n.cells <- ncol(cts)
 
-  # bootstrap matrix
-  M.bs <- Matrix::Matrix(rmultinom(replicates, n.cells, rep(1, n.cells)), sparse=TRUE)
+    # bootstrap matrix
+    M.bs <- Matrix(rmultinom(replicates, n.cells, rep(1, n.cells)), sparse = TRUE)
 
-  SU.bs  <- cts[idx.SU,] %*% M.bs
-  LU.bs  <- cts[idx.LU,] %*% M.bs
-  LUI.bs <- as.matrix(LU.bs / (SU.bs + LU.bs))
+    SU.bs <- cts[idx.SU, ] %*% M.bs
+    LU.bs <- cts[idx.LU, ] %*% M.bs
+    LUI.bs <- LU.bs / (SU.bs + LU.bs)
 
-  qs <- matrixStats::rowQuantiles(LUI.bs, probs=probs, na.rm=na.rm)
+    qs <- rowQuantiles(LUI.bs, probs = probs, na.rm = na.rm)
 
-  qs
+    qs
 }
 
 #' gene_ci
@@ -36,19 +37,20 @@ lui_ci <- function (object, idx.SU, idx.LU, replicates=2000, probs=c(0.005, 0.02
 #' @param na.rm
 #'
 #' @return
-#' @export
 #'
-#' @examples
-gene_ci <- function (object, replicates=2000, probs=c(0.005, 0.025, 0.25, 0.5, 0.75, 0.975, 0.995), na.rm=TRUE) {
-  cts <- to_counts(object)
+#' @import Matrix
+#' @importFrom sparseMatrixStats rowQuantiles
+#' @export
+gene_ci <- function(object, replicates = 2000, probs = c(0.005, 0.025, 0.25, 0.5, 0.75, 0.975, 0.995), na.rm = TRUE) {
+    cts <- to_counts(object)
 
-  n.cells <- ncol(cts)
+    n.cells <- ncol(cts)
 
-  # bootstrap matrix
-  M.bs <- Matrix::Matrix(rmultinom(replicates, n.cells, rep(1, n.cells)), sparse=TRUE)
+    # bootstrap matrix
+    M.bs <- Matrix(rmultinom(replicates, n.cells, rep(1, n.cells)), sparse = TRUE)
 
-  gene.bs  <- as.matrix(cts %*% M.bs / n.cells)
+    gene.bs <- as.matrix(cts %*% M.bs / n.cells)
 
-  qs <- matrixStats::rowQuantiles(gene.bs, probs=probs, na.rm=na.rm)
-  qs
+    qs <- rowQuantiles(gene.bs, probs = probs, na.rm = na.rm)
+    qs
 }
