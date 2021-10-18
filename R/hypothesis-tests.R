@@ -128,12 +128,14 @@ testTwoSample <- function (sce, sampleKey, sample0, sample1,
     }
     rm(dUsage_tx_bs); gc()
 
-    pval_gene <- rowMeans(abs(stat_gene_bs) - abs(stat_gene) > 0)
+    pval_gene <- rowMeans(abs(stat_gene_bs) - abs(stat_gene) >= 0, na.rm=TRUE)
+    nbs_true <- rowSums(!is.na(stat_gene_bs))
 
     ## adjust by pseudocount
     ##pval_gene <- (pval_gene * nBootstraps^2 + pseudocount) / (nBootstraps^2 + pseudocount)
-    pval_gene <- (pval_gene * nBootstraps + pseudocount) / (nBootstraps + pseudocount)
+    pval_gene <- (pval_gene * nbs_true + pseudocount) / (nbs_true + pseudocount)
 
     ## format dataframe
-    DataFrame(gene=rownames(M_gene_tx), stat=stat_gene[,1], pval=pval_gene)
+    DataFrame(gene=rownames(M_gene_tx), stat=stat_gene[,1],
+              pval=pval_gene, bootstraps=nbs_true)
 }
