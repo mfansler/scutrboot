@@ -1,3 +1,17 @@
+# scutrboot 0.2.2
+
+NEW FEATURES
+
+* None
+
+SIGNIFICANT USER-VISIBLE CHANGES
+
+* `testTwoSample` respects the `minCellsPerGene` argument.
+
+BUG FIXES
+
+* Previously, the `minCellsPerGene` argument was effectively being ignored.
+
 # scutrboot 0.2.1
 
 NEW FEATURES

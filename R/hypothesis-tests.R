@@ -27,7 +27,7 @@
 #'     - \code{pval}
 #'
 #'
-#' @importFrom Matrix fac2sparse Diagonal
+#' @importFrom Matrix fac2sparse Diagonal drop0
 #' @importFrom sparseMatrixStats rowAlls colAnys
 #' @import SingleCellExperiment
 #' @export
@@ -68,7 +68,7 @@ testTwoSample <- function (sce, sampleKey, sample0, sample1,
 
     ncells_gene_sample <- ((M_gene_tx %*% cts_tx_cell) > 0) %*% M_cell_sample
 
-    idxExpressedGenes <- rowAlls(ncells_gene_sample >= minCellsPerGene)
+    idxExpressedGenes <- rowAlls(drop0(ncells_gene_sample >= minCellsPerGene))
     idxMultiTxGenes <- rowSums(M_gene_tx) > 1
     idxTestableTxs <- colAnys(M_gene_tx[idxExpressedGenes & idxMultiTxGenes,])
 

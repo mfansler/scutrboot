@@ -6,7 +6,7 @@ biocViews:
     Transcriptomics,
     RNASeq,
     SingleCell
-Version: 0.2.1
+Version: 0.2.2
 Date: 2021-10-12
 Authors@R: 
     person(given = "Mervin", 
