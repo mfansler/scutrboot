@@ -1,91 +1,141 @@
-#' two_sample_test_lui
+#' Two Sample Test
 #'
-#' @param object
-#' @param idx.A
-#' @param idx.B
-#' @param idx.SU
-#' @param idx.LU
-#' @param replicates
-#' @param pseudocount
+#' @param sce a \code{SingleCellExperiment} object
+#' @param sampleKey a string specifying the factor column in \code{colData(sce)}
+#'     that codes for samples
+#' @param sample0 a string specifying the level for the baseline sample
+#' @param sample1 a string specifying the level for the contrasting sample
+#' @param statistic either "WD" (Wasserstein Distance) or "UI" (Usage Index). If
+#'     Usage Index is specified, then the \code{featureIndex} argument must also
+#'     be provided.
+#' @param nBootstraps number of bootstraps samples to use estimate pvalues
+#' @param geneKey a string specifying the factor column in \code{rowData(sce)}
+#'     that specifies the gene with which each transcript is associated
+#' @param featureIndex a string specifying a logical column in \code{rowData(sce)}
+#'     that specifies which transcripts are indexed. The logical should be TRUE
+#'     for at least one isoform per gene, otherwise the index will constant.
+#' @param featureExclude a string specifying a logical column in \code{rowData(sce)}
+#'     of features to exclude. All isoforms with a TRUE value in the column will
+#'     be removed.
+#' @param minCellsPerGene a numeric specifying the minimum number of cells
+#'     that express a gene to consider the gene testable.
+#' @param assay the assay in the \code{SingleCellExperiment} to use
 #'
-#' @return
+#' @return a \code{DataFrame} with columns
+#'     - \code{gene}
+#'     - \code{stat}
+#'     - \code{pval}
+#'
+#'
+#' @importFrom Matrix fac2sparse Diagonal drop0
+#' @importFrom sparseMatrixStats rowAlls colAnys
+#' @import SingleCellExperiment
 #' @export
-#'
-#' @examples
-two_sample_test_lui <- function (object, idx.A, idx.B, idx.SU, idx.LU, replicates=2000, pseudocount=1) {
-  cts <- to_counts(object)
+testTwoSample <- function (sce, sampleKey, sample0, sample1,
+                           statistic=c("WD", "UI"), nBootstraps=10000,
+                           geneKey="gene_id", featureIndex=NULL,
+                           featureExclude=NULL, minCellsPerGene=50,
+                           assayName="counts", pseudocount=1) {
+    if (statistic == 'UI' && is.null(featureIndex)) {
+        stop("The 'UI' (Usage Index) statistic requires a `featureIndex` to be provided!")
+    } else if (statistic == 'WD' && !is.null(featureIndex)) {
+        warning("The 'WD' (Wasserstein Distance) statistic ignores the `featureIndex` argument.")
+    }
 
-  idx.AB <- c(idx.A, idx.B)
+    ## filter cells
+    sce <- sce[,colData(sce)[[sampleKey]] %in% c(sample0, sample1)]
 
-  n.A <- length(idx.A)
-  n.B <- length(idx.B)
-  n.AB <- n.A + n.B
+    ## filter excluded transcripts
+    if (!is.null(featureExclude)) {
+        if (is.logical(featureExclude)) {
+            sce <- sce[!featureExclude,]
+        } else if (featureExclude %in% names(rowData(sce))) {
+            sce <- sce[!rowData(sce)[[featureExclude]],]
+        } else {
+            warning("The `featureExclude` argument must either be a logical or",
+                    " a column name of `rowData(sce)`! Ignoring argument.")
+        }
+    }
 
-  LUI.A.hat <- mean_lu_usage(cts[, idx.A], idx.SU, idx.LU)
-  LUI.B.hat <- mean_lu_usage(cts[, idx.B], idx.SU, idx.LU)
-  LUI.diff.hat <- LUI.B.hat - LUI.A.hat
+    ## filter unexpressed transcripts
+    sce <- sce[rowSums(assay(sce, assayName)) > 0,]
 
-  # bootstrap matrix for pseudo group A
-  M.bs.A <- Matrix::Matrix(rmultinom(replicates, n.A, rep(1, n.AB)), sparse=TRUE)
+    ## filter untestable transcripts
+    cts_tx_cell <- assay(sce, assayName)
 
-  SU.bs.A  <- cts[idx.SU, idx.AB] %*% M.bs.A
-  LU.bs.A  <- cts[idx.LU, idx.AB] %*% M.bs.A
-  LUI.bs.A <- LU.bs.A / (SU.bs.A + LU.bs.A)
+    M_gene_tx <- fac2sparse(rowData(sce)[[geneKey]])
+    M_cell_sample <- t(fac2sparse(colData(sce)[[sampleKey]]))[,c(sample0, sample1)]
 
-  # bootstrap matrix for pseudo group B
-  M.bs.B <- Matrix::Matrix(rmultinom(replicates, n.B, rep(1, n.AB)), sparse=TRUE)
+    ncells_gene_sample <- ((M_gene_tx %*% cts_tx_cell) > 0) %*% M_cell_sample
 
-  SU.bs.B  <- cts[idx.SU, idx.AB] %*% M.bs.B
-  LU.bs.B  <- cts[idx.LU, idx.AB] %*% M.bs.B
-  LUI.bs.B <- LU.bs.B / (SU.bs.B + LU.bs.B)
+    idxExpressedGenes <- rowAlls(drop0(ncells_gene_sample >= minCellsPerGene))
+    idxMultiTxGenes <- rowSums(M_gene_tx) > 1
+    idxTestableTxs <- colAnys(M_gene_tx[idxExpressedGenes & idxMultiTxGenes,])
 
-  LUI.bs.pvals <- Matrix::rowMeans((abs(LUI.bs.B - LUI.bs.A) - abs(LUI.diff.hat)) >= 0)
+    sce <- sce[idxTestableTxs,]
 
-  # adjust by pseudocount
-  LUI.bs.pvals <- (LUI.bs.pvals*replicates + pseudocount) / (replicates + pseudocount)
+    rm(list=c("ncells_gene_sample", "idxExpressedGenes", "idxMultiTxGenes",
+              "idxTestableTxs"))
 
-  data.frame(A.hat=LUI.A.hat, B.hat=LUI.B.hat, pvals=LUI.bs.pvals)
-}
+    ## compute observed statistics
+    cts_tx_cell <- assay(sce, assayName)
 
-#' two_sample_test_gene
-#'
-#' @param object
-#' @param idx.A
-#' @param idx.B
-#' @param replicates
-#' @param pseudocount
-#'
-#' @return
-#' @export
-#'
-#' @examples
-two_sample_test_gene <- function (object, idx.A, idx.B, replicates=2000, pseudocount=1) {
-  cts <- to_counts(object)
+    M_gene_tx <- fac2sparse(rowData(sce)[[geneKey]]) ## updated
 
-  idx.AB <- c(idx.A, idx.B)
+    cts_tx_sample <- cts_tx_cell %*% M_cell_sample
+    cts_gene_sample <- M_gene_tx %*% cts_tx_sample
+    usage_tx_sample <- (t(M_gene_tx) %*% (1/cts_gene_sample)) * cts_tx_sample
 
-  n.A <- length(idx.A)
-  n.B <- length(idx.B)
-  n.AB <- n.A + n.B
+    dUsage_tx <- usage_tx_sample[,sample1] - usage_tx_sample[,sample0]
+    if (statistic == "WD") {
+        stat_gene <- M_gene_tx %*% abs(dUsage_tx) / 2.0
+    } else {
+        D_index <- Diagonal(nrow(sce), rowData(sce)[[featureIndex]])
+        stat_gene <- M_gene_tx %*% D_index %*% dUsage_tx
+    }
 
-  gene.A.hat <- mean_counts_per_cell(cts[, idx.A])
-  gene.B.hat <- mean_counts_per_cell(cts[, idx.B])
-  gene.diff.hat <- gene.B.hat - gene.A.hat
+    ## bootstrap statistics
+    ncells_sample <- colSums(M_cell_sample)
+    M_cell_bs0 <- Matrix(sparse=TRUE,
+                         data=rmultinom(nBootstraps,
+                                        ncells_sample[[sample0]],
+                                        rep(1, sum(ncells_sample))))
+    cts_tx_bs0 <- cts_tx_cell %*% M_cell_bs0
+    cts_gene_bs0 <- M_gene_tx %*% cts_tx_bs0
+    usage_tx_bs0 <- (t(M_gene_tx) %*% (1/cts_gene_bs0)) * cts_tx_bs0
+    rm(M_cell_bs0, cts_tx_bs0, cts_gene_bs0); gc()
 
-  # bootstrap matrix for pseudo group A
-  M.bs.A <- Matrix::Matrix(rmultinom(replicates, n.A, rep(1, n.AB)), sparse=TRUE)
+    M_cell_bs1 <- Matrix(sparse=TRUE,
+                         data=rmultinom(nBootstraps,
+                                        ncells_sample[[sample1]],
+                                        rep(1, sum(ncells_sample))))
+    cts_tx_bs1 <- cts_tx_cell %*% M_cell_bs1
+    cts_gene_bs1 <- M_gene_tx %*% cts_tx_bs1
+    usage_tx_bs1 <- (t(M_gene_tx) %*% (1/cts_gene_bs1)) * cts_tx_bs1
+    rm(M_cell_bs1, cts_tx_bs1, cts_gene_bs1, cts_tx_cell); gc()
 
-  gene.bs.A  <- cts[, idx.AB] %*% M.bs.A / n.A
+    ## Note: switching order of Kronecker product effectively computes all
+    ##       combinations of columns
+    #K_repeat <- matrix(rep(1, nBootstraps), nrow=1)
+    #dUsage_tx_bs <- (K_repeat %x% usage_tx_bs1) - (usage_tx_bs0 %x% K_repeat)
+    dUsage_tx_bs <- usage_tx_bs1 - usage_tx_bs0
+    rm(usage_tx_bs1, usage_tx_bs0); gc()
 
-  # bootstrap matrix for pseudo group B
-  M.bs.B <- Matrix::Matrix(rmultinom(replicates, n.B, rep(1, n.AB)), sparse=TRUE)
+    if (statistic == "WD") {
+        stat_gene_bs <- M_gene_tx %*% abs(dUsage_tx_bs) / 2.0
+    } else {
+        stat_gene_bs <- M_gene_tx %*% D_index %*% dUsage_tx_bs
+    }
+    rm(dUsage_tx_bs); gc()
 
-  gene.bs.B  <- cts[, idx.AB] %*% M.bs.B / n.B
+    pval_gene <- rowMeans(abs(stat_gene_bs) - abs(stat_gene) >= 0, na.rm=TRUE)
+    nbs_true <- rowSums(!is.na(stat_gene_bs))
 
-  gene.bs.pvals <- Matrix::rowMeans((abs(gene.bs.B - gene.bs.A) - abs(gene.diff.hat)) >= 0)
+    ## adjust by pseudocount
+    ##pval_gene <- (pval_gene * nBootstraps^2 + pseudocount) / (nBootstraps^2 + pseudocount)
+    pval_gene <- (pval_gene * nbs_true + pseudocount) / (nbs_true + pseudocount)
 
-  # adjust by pseudocount
-  gene.bs.pvals <- (gene.bs.pvals*replicates + pseudocount) / (replicates + pseudocount)
-
-  data.frame(A.hat=gene.A.hat, B.hat=gene.B.hat, pvals=gene.bs.pvals)
+    ## format dataframe
+    DataFrame(gene=rownames(M_gene_tx), stat=stat_gene[,1],
+              pval=pval_gene, bootstraps=nbs_true)
 }
