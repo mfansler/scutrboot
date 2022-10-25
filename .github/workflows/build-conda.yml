@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'conda-recipe/meta.yaml'
+  workflow_dispatch:
 
 jobs:
   build-publish:
