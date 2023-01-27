@@ -10,9 +10,9 @@ source:
   path: ../
 
 build:
-  merge_build_host: True  # [win]
-  number: 1
-
+  merge_build_host: true  # [win]
+  number: 2
+  noarch: generic
   rpaths:
     - lib/R/lib/
     - lib/
