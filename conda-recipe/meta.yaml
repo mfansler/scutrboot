@@ -1,4 +1,4 @@
-{% set version = '0.2.2' %}
+{% set version = '0.3.0' %}
 {% set posix = 'm2-' if win else '' %}
 {% set native = 'm2w64-' if win else '' %}
 
@@ -11,7 +11,7 @@ source:
 
 build:
   merge_build_host: true  # [win]
-  number: 2
+  number: 0
   noarch: generic
   rpaths:
     - lib/R/lib/
@@ -39,14 +39,13 @@ requirements:
 
 test:
   commands:
-    # You can put additional test commands to be run here.
     - $R -e "library('scutrboot')"           # [not win]
     - "\"%R%\" -e \"library('scutrboot')\""  # [win]
 
 about:
   home: https://github.com/mfansler/scutrboot
-  license: GPL-3
-  summary: A set of bootstrap-based statistical methods for analyzing 3\u2032 UTR
+  license: GPL-3.0-only
+  summary: A set of bootstrap-based statistical methods for analyzing 3\' UTR
     quantification data derived from single-cell RNA-sequencing.
 
   license_family: GPL3
