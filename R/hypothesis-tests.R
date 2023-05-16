@@ -5,21 +5,23 @@
 #'     that codes for samples
 #' @param sample0 a string specifying the level for the baseline sample
 #' @param sample1 a string specifying the level for the contrasting sample
-#' @param statistic either "WD" (Wasserstein Distance) or "UI" (Usage Index). If
-#'     Usage Index is specified, then the \code{featureIndex} argument must also
-#'     be provided.
+#' @param statistic one of "WD" (Wasserstein Distance), "UI" (Usage Index),
+#'     or "WUI" (Weighted Usage Index). If "UI" or "WUI" is specified, then the
+#'     \code{featureIndex} argument must also be provided.
 #' @param nBootstraps number of bootstraps samples to use estimate pvalues
 #' @param geneKey a string specifying the factor column in \code{rowData(sce)}
 #'     that specifies the gene with which each transcript is associated
-#' @param featureIndex a string specifying a logical column in \code{rowData(sce)}
-#'     that specifies which transcripts are indexed. The logical should be TRUE
-#'     for at least one isoform per gene, otherwise the index will constant.
+#' @param featureIndex a string specifying a column in \code{rowData(sce)}
+#'     that specifies either which isoforms are indexed ("UI") or the weight
+#'     for each isoform within the gene ("WUI"). For "UI" this should be a logical
+#'     that is TRUE for at least one isoform per gene, otherwise the index will constant.
+#'     For "WUI" mode, this should be numeric.
 #' @param featureExclude a string specifying a logical column in \code{rowData(sce)}
 #'     of features to exclude. All isoforms with a TRUE value in the column will
 #'     be removed.
 #' @param minCellsPerGene a numeric specifying the minimum number of cells
 #'     that express a gene to consider the gene testable.
-#' @param assay the assay in the \code{SingleCellExperiment} to use
+#' @param assayName the assay in the \code{SingleCellExperiment} to use
 #'
 #' @return a \code{DataFrame} with columns
 #'     - \code{gene}
@@ -32,55 +34,23 @@
 #' @import SingleCellExperiment
 #' @export
 testTwoSample <- function (sce, sampleKey, sample0, sample1,
-                           statistic=c("WD", "UI"), nBootstraps=10000,
+                           statistic=c("WUI", "WD", "UI"),
+                           nBootstraps=10000L,
                            geneKey="gene_id", featureIndex=NULL,
-                           featureExclude=NULL, minCellsPerGene=50,
+                           featureExclude=NULL, minCellsPerGene=50L,
                            assayName="counts", pseudocount=1) {
-    if (statistic == 'UI' && is.null(featureIndex)) {
-        stop("The 'UI' (Usage Index) statistic requires a `featureIndex` to be provided!")
-    } else if (statistic == 'WD' && !is.null(featureIndex)) {
-        warning("The 'WD' (Wasserstein Distance) statistic ignores the `featureIndex` argument.")
-    }
+    ## check arguments
+    .validateArguments.testTwoSample(statistic, featureIndex)
 
-    ## filter cells
-    sce <- sce[,colData(sce)[[sampleKey]] %in% c(sample0, sample1)]
-
-    ## filter excluded transcripts
-    if (!is.null(featureExclude)) {
-        if (is.logical(featureExclude)) {
-            sce <- sce[!featureExclude,]
-        } else if (featureExclude %in% names(rowData(sce))) {
-            sce <- sce[!rowData(sce)[[featureExclude]],]
-        } else {
-            warning("The `featureExclude` argument must either be a logical or",
-                    " a column name of `rowData(sce)`! Ignoring argument.")
-        }
-    }
-
-    ## filter unexpressed transcripts
-    sce <- sce[rowSums(assay(sce, assayName)) > 0,]
-
-    ## filter untestable transcripts
-    cts_tx_cell <- assay(sce, assayName)
-
-    M_gene_tx <- fac2sparse(rowData(sce)[[geneKey]])
-    M_cell_sample <- t(fac2sparse(colData(sce)[[sampleKey]]))[,c(sample0, sample1)]
-
-    ncells_gene_sample <- ((M_gene_tx %*% cts_tx_cell) > 0) %*% M_cell_sample
-
-    idxExpressedGenes <- rowAlls(drop0(ncells_gene_sample >= minCellsPerGene))
-    idxMultiTxGenes <- rowSums(M_gene_tx) > 1
-    idxTestableTxs <- colAnys(M_gene_tx[idxExpressedGenes & idxMultiTxGenes,])
-
-    sce <- sce[idxTestableTxs,]
-
-    rm(list=c("ncells_gene_sample", "idxExpressedGenes", "idxMultiTxGenes",
-              "idxTestableTxs"))
+    ## filter testable transcripts
+    sce <- .filterTestableTxs(sce, sampleKey, sample0, sample1, geneKey,
+                              featureExclude, minCellsPerGene, assayName)
 
     ## compute observed statistics
     cts_tx_cell <- assay(sce, assayName)
 
-    M_gene_tx <- fac2sparse(rowData(sce)[[geneKey]]) ## updated
+    M_gene_tx <- fac2sparse(rowData(sce)[[geneKey]])
+    M_cell_sample <- t(fac2sparse(colData(sce)[[sampleKey]]))[,c(sample0, sample1)]
 
     cts_tx_sample <- cts_tx_cell %*% M_cell_sample
     cts_gene_sample <- M_gene_tx %*% cts_tx_sample
@@ -90,6 +60,7 @@ testTwoSample <- function (sce, sampleKey, sample0, sample1,
     if (statistic == "WD") {
         stat_gene <- M_gene_tx %*% abs(dUsage_tx) / 2.0
     } else {
+        ## technically
         D_index <- Diagonal(nrow(sce), rowData(sce)[[featureIndex]])
         stat_gene <- M_gene_tx %*% D_index %*% dUsage_tx
     }
@@ -139,3 +110,88 @@ testTwoSample <- function (sce, sampleKey, sample0, sample1,
     DataFrame(gene=rownames(M_gene_tx), stat=stat_gene[,1],
               pval=pval_gene, bootstraps=nbs_true)
 }
+
+
+#' Validate arguments to testTwoSample
+#'
+#' @param statistic character argument from \code{testTwoSample}
+#' @param featureIndex character argument from \code{testTwoSample}
+#'
+#' @return
+#'
+#' @noRd
+.validateArguments.testTwoSample <- function (statistic, featureIndex) {
+    if (statistic == 'WUI') {
+        if (is.null(featureIndex)) {
+            stop("The 'WUI' (Weighted Usage Index) statistic requires a `featureIndex` to be provided!")
+        }
+    } else if (statistic == 'UI') {
+        if(is.null(featureIndex)) {
+            stop("The 'UI' (Usage Index) statistic requires a `featureIndex` to be provided!")
+        }
+    } else if (statistic == 'WD') {
+        if (!is.null(featureIndex)) {
+            warning("The 'WD' (Wasserstein Distance) statistic ignores the `featureIndex` argument.")
+        }
+    }
+}
+
+
+#' Filter to testable transcripts
+#'
+#' @param sce a \code{SingleCellExperiment} object
+#' @param sampleKey a string specifying the factor column in \code{colData(sce)}
+#'     that codes for samples
+#' @param sample0 a string specifying the level for the baseline sample
+#' @param sample1 a string specifying the level for the contrasting sample
+#' @param geneKey a string specifying the factor column in \code{rowData(sce)}
+#'     that specifies the gene with which each transcript is associated
+#' @param featureExclude a string specifying a logical column in \code{rowData(sce)}
+#'     of features to exclude. All isoforms with a TRUE value in the column will
+#'     be removed.
+#' @param minCellsPerGene a numeric specifying the minimum number of cells
+#'     that express a gene to consider the gene testable.
+#' @param assayName the assay in the \code{SingleCellExperiment} to use
+#'
+#' @return
+#'
+#' @noRd
+#' @importFrom Matrix fac2sparse Diagonal drop0
+#' @importFrom sparseMatrixStats rowAlls colAnys
+#' @import SingleCellExperiment
+.filterTestableTxs <- function (sce, sampleKey, sample0, sample1, geneKey,
+                                featureExclude, minCellsPerGene,
+                                assayName) {
+    ## filter cells
+    sce <- sce[,colData(sce)[[sampleKey]] %in% c(sample0, sample1)]
+
+    ## filter excluded transcripts
+    if (!is.null(featureExclude)) {
+        if (is.logical(featureExclude)) {
+            sce <- sce[!featureExclude,]
+        } else if (featureExclude %in% names(rowData(sce))) {
+            sce <- sce[!rowData(sce)[[featureExclude]],]
+        } else {
+            warning("The `featureExclude` argument must either be a logical or",
+                    " a column name of `rowData(sce)`! Ignoring argument.")
+        }
+    }
+
+    ## filter unexpressed transcripts
+    sce <- sce[rowSums(assay(sce, assayName)) > 0,]
+
+    ## filter untestable transcripts
+    cts_tx_cell <- assay(sce, assayName)
+
+    M_gene_tx <- fac2sparse(rowData(sce)[[geneKey]])
+    M_cell_sample <- t(fac2sparse(colData(sce)[[sampleKey]]))[,c(sample0, sample1)]
+
+    ncells_gene_sample <- ((M_gene_tx %*% cts_tx_cell) > 0) %*% M_cell_sample
+
+    idxExpressedGenes <- rowAlls(drop0(ncells_gene_sample >= minCellsPerGene))
+    idxMultiTxGenes <- rowSums(M_gene_tx) > 1
+    idxTestableTxs <- colAnys(M_gene_tx[idxExpressedGenes & idxMultiTxGenes,])
+
+    sce[idxTestableTxs,]
+}
+
