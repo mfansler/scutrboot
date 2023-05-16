@@ -6,8 +6,8 @@ biocViews:
     Transcriptomics,
     RNASeq,
     SingleCell
-Version: 0.2.2
-Date: 2021-10-12
+Version: 0.3.0
+Date: 2023-05-15
 Authors@R: 
     person(given = "Mervin", 
            family = "Fansler",
@@ -28,4 +28,4 @@ Suggests:
     S4Vectors
 VignetteBuilder: knitr
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.1.1
+RoxygenNote: 7.2.3
