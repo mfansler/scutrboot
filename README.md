@@ -9,6 +9,8 @@
 issues](https://img.shields.io/github/issues/mfansler/scutrboot)](https://github.com/mfansler/scutrboot/issues)
 [![GitHub
 pulls](https://img.shields.io/github/issues-pr/mfansler/scutrboot)](https://github.com/mfansler/scutrboot/pulls)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.8057843.svg)](https://doi.org/10.5281/zenodo.8057843)
+
 <!-- badges: end -->
 
 ## Overview
